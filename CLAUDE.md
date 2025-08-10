@@ -1,3 +1,6 @@
+IMPORTANT:
+- At the end of development for each feature, YOU MUST create a pull request to merge the feature branch back to the main branch after pushing it to the remote repository.
+
 # Project Overview
 You should consult the linear project overview to get a grasp on the project requirements. Note, the main information will be stored on a project not issue level. We should start every session by consulting the project description, reading the changelog to see what's already been built out, and then checking the active issues that aren't in progress to get started on them.
 
@@ -8,7 +11,6 @@ You should consult the linear project overview to get a grasp on the project req
 - Frequently commit your code as you go through the development process, so we can be sure that we're tracking our work properly. 
 - For each new feature/linear issue, create a separate git branch that you work out of
 - It's possible that we'll eventually have multiple agents working collaboratively, so on each feature you should also add docstrings, which describe how to interface with this feature.
-- At the end of development for each feature, create a pull request to merge the feature branch back to the main branch
 
 ## How to communicate across agents. 
 - Since multiple agents are going to be working on this feature together, maintain a summary of the changes that you made in changelog.md
