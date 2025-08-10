@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "bun";
-import { linearClient, attachToClaudeWorker, attachToClaudeWorkerLocal } from "./utils";
+import { linearClient, attachToClaudeWorkerLocal } from "./utils";
 
 interface ClaudeSession {
     issueId: string;
@@ -78,7 +78,7 @@ async function createTmuxWorkerSession(workerNum: number): Promise<void> {
         
         const proc = spawn([
             'tmux', 'new-session', '-d', '-s', sessionName,
-            '-c', '/Users/akshgarg/Documents/try2/Harmonize'
+            '-c', '/Users/akshgarg/Documents/sync'
         ], {
             stdout: 'pipe',
             stderr: 'pipe'
@@ -121,7 +121,7 @@ IMPORTANT:
 - Use the Edit and Write tools to modify files
 - Use Bash tool for git operations
 - Keep changes minimal and focused
-- Work in /Users/akshgarg/Documents/try2/Harmonize directory
+- Work in /Users/akshgarg/Documents/sync directory
 
 When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you finished.
 `;
@@ -136,7 +136,7 @@ When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you fi
 /**
  * Spawns a Claude Code instance to work on a Linear issue using tmux
  */
-export async function launchClaudeForIssue(issueId: string, linearIdentifier: string, useLocal: boolean = true): Promise<ClaudeSession> {
+export async function launchClaudeForIssue(issueId: string, linearIdentifier: string): Promise<ClaudeSession> {
     console.log(`🚀 Launching Claude Code for issue ${linearIdentifier}...`);
     
     // Check if session already exists
@@ -168,12 +168,8 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         workerAssignments.set(workerNumber, issueId);
         activeSessions.set(issueId, session);
         
-        // Launch Claude in the tmux worker with the prompt
-        if (useLocal) {
-            await attachToClaudeWorkerLocal(workerNumber, prompt);
-        } else {
-            await attachToClaudeWorker(workerNumber, prompt);
-        }
+        // Launch Claude in the tmux worker with the prompt (always use local mode)
+        await attachToClaudeWorkerLocal(workerNumber, prompt);
         
         console.log(`✅ Claude Code launched for ${linearIdentifier} in ${tmuxSession}`);
         

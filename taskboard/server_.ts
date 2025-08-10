@@ -1,11 +1,13 @@
-import { verifyLinearSignature } from "./utils";
-import { listActiveSessions } from "./claude-launcher";
-import { launchClaudeTask } from "../test-tmux-launcher";
+import { verifyLinearSignature, addCommentToIssue, isIssueBlocked } from "./utils";
+import { launchClaudeForIssue, getSessionStatus, listActiveSessions } from "./claude-launcher";
 import { spawn } from "bun";
 
 Bun.serve({
     port: 3000,
     routes: {
+      // Root route
+      "/": () => new Response("Claude Code Linear Automation Server - Server is running!"),
+      
       // Static routes  
       "/api/status": () => {
         const sessions = listActiveSessions();
@@ -109,19 +111,31 @@ Bun.serve({
               const issueId = payload.data.id;
               const identifier = payload.data.identifier;
               
-              console.log(`📋 Processing assignment for ${identifier} (${issueId})`);
+              // Check if issue is blocked
+              const blocked = await isIssueBlocked(issueId);
+              if (blocked) {
+                await addCommentToIssue(issueId, "⏸️ Issue is blocked by dependencies. Will execute when unblocked.");
+                console.log(`Issue ${identifier} is blocked, skipping Claude launch`);
+                return new Response('OK', { status: 200 });
+              }
               
-              // Use the enhanced launcher with dependency checking
-              const success = await launchClaudeTask({
-                issueId,
-                identifier,
-                skipDependencyCheck: false // Always check dependencies in webhook
-              });
+              // Check if Claude session already exists
+              const existingSession = getSessionStatus(issueId);
+              if (existingSession && existingSession.status === 'running') {
+                await addCommentToIssue(issueId, "🔄 Claude Code is already working on this issue");
+                console.log(`Session already exists for ${identifier}`);
+                return new Response('OK', { status: 200 });
+              }
               
-              if (success) {
-                console.log(`✅ Successfully launched Claude for issue ${identifier}`);
-              } else {
-                console.log(`⚠️ Claude launch skipped or failed for ${identifier}`);
+              // Launch Claude Code for this issue
+              try {
+                await addCommentToIssue(issueId, "🚀 Launching Claude Code to work on this issue...");
+                await launchClaudeForIssue(issueId, identifier);
+                console.log(`Successfully launched Claude for issue ${identifier}`);
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.error(`Failed to launch Claude for ${identifier}:`, errorMessage);
+                await addCommentToIssue(issueId, `❌ Failed to launch Claude Code: ${errorMessage}`);
               }
             }
             
