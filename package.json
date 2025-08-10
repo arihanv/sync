@@ -1,0 +1,14 @@
+{
+  "name": "harmonize",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@linear/sdk": "^55.2.1",
+    "dotenv": "^17.2.1"
+  }
+}
