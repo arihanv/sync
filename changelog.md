@@ -104,4 +104,14 @@ All entries should follow this format:
 - **Testing**: Created `test-tmux-launcher.ts` for verification of tmux integration
 - **Status**: Claude Code tasks now launch in managed tmux sessions with proper scheduling
 
+### **Date**: 2025-08-10 23:45
+**Agent**: Claude Code (Autonomous)
+**Changes**: HAR-37 - Created project README
+- **Created `README.md`**: Comprehensive project documentation for Harmonize
+  - Overview of automated task orchestration system
+  - Key components: Linear integration, Claude Code orchestration, dependency management
+  - Installation and usage instructions
+  - Architecture overview with file descriptions
+- **Status**: Project now has proper documentation for new contributors and users
+
 ---
