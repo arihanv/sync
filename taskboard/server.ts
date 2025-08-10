@@ -1,5 +1,6 @@
 import { verifyLinearSignature, addCommentToIssue, isIssueBlocked } from "./utils";
 import { launchClaudeForIssue, getSessionStatus, listActiveSessions } from "./claude-launcher";
+import { spawn } from "bun";
 
 Bun.serve({
     port: 3000,
@@ -15,11 +16,59 @@ Bun.serve({
             linearIdentifier: s.linearIdentifier,
             status: s.status,
             startedAt: s.startedAt,
-            runtime: Date.now() - s.startedAt.getTime()
+            runtime: Date.now() - s.startedAt.getTime(),
+            tmuxSession: s.tmuxSession,
+            workerNumber: s.workerNumber
           }))
         }), {
           headers: { "Content-Type": "application/json" }
         });
+      },
+      
+      // Tmux sessions status
+      "/api/tmux": async () => {
+        try {
+          const proc = spawn(['tmux', 'list-sessions'], {
+            stdout: 'pipe',
+            stderr: 'pipe'
+          });
+          
+          await proc.exited;
+          const output = new TextDecoder().decode(await new Response(proc.stdout).arrayBuffer());
+          
+          const sessions = output.split('\n')
+            .filter(line => line.trim() && line.includes('claude-worker-'))
+            .map(line => {
+              const parts = line.split(':');
+              const sessionName = parts[0];
+              if (!sessionName) return null;
+              
+              const workerMatch = sessionName.match(/claude-worker-(\d+)/);
+              const workerNumber = workerMatch?.[1] ? Number.parseInt(workerMatch[1]) : null;
+              
+              return {
+                sessionName,
+                workerNumber,
+                info: line.trim()
+              };
+            })
+            .filter((session): session is NonNullable<typeof session> => session !== null);
+          
+          return new Response(JSON.stringify({
+            status: "OK",
+            tmuxSessions: sessions.length,
+            sessions
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: "ERROR",
+            error: error instanceof Error ? error.message : String(error)
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
       },
       
       // Linear webhook endpoint

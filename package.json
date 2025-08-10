@@ -1,6 +1,10 @@
 {
   "name": "harmonize",
   "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "typecheck:watch": "tsc --noEmit --skipLibCheck --watch"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "bun";
-import { linearClient } from "./utils";
+import { linearClient, attachToClaudeWorker } from "./utils";
 
 interface ClaudeSession {
     issueId: string;
@@ -14,10 +14,83 @@ interface ClaudeSession {
     startedAt: Date;
     status: 'running' | 'completed' | 'failed';
     output: string[];
+    tmuxSession?: string;
+    workerNumber?: number;
 }
 
 // Active Claude sessions
 const activeSessions = new Map<string, ClaudeSession>();
+
+// Track which tmux workers are in use
+const workerAssignments = new Map<number, string>(); // workerNum -> issueId
+
+/**
+ * Gets list of available tmux sessions for Claude workers
+ */
+async function getAvailableTmuxWorkers(): Promise<number[]> {
+    try {
+        const proc = spawn(['tmux', 'list-sessions'], {
+            stdout: 'pipe',
+            stderr: 'pipe'
+        });
+        
+        await proc.exited;
+        
+        const output = new TextDecoder().decode(await new Response(proc.stdout).arrayBuffer());
+        const sessions = output.split('\n')
+            .filter(line => line.includes('claude-worker-'))
+            .map(line => {
+                const match = line.match(/claude-worker-(\d+)/);
+                return match?.[1] ? parseInt(match[1]) : null;
+            })
+            .filter((num): num is number => num !== null);
+        
+        // Return workers that are not currently assigned
+        return sessions.filter(workerNum => !workerAssignments.has(workerNum));
+    } catch (error) {
+        console.error('Error listing tmux sessions:', error);
+        return [];
+    }
+}
+
+/**
+ * Finds the next available tmux worker or creates a new one
+ */
+async function getNextAvailableWorker(): Promise<number> {
+    const availableWorkers = await getAvailableTmuxWorkers();
+    
+    if (availableWorkers.length > 0) {
+        return Math.min(...availableWorkers);
+    }
+    
+    // If no workers available, create a new one
+    const nextWorkerNum = Math.max(0, ...Array.from(workerAssignments.keys())) + 1;
+    await createTmuxWorkerSession(nextWorkerNum);
+    return nextWorkerNum;
+}
+
+/**
+ * Creates a new tmux session for Claude worker
+ */
+async function createTmuxWorkerSession(workerNum: number): Promise<void> {
+    try {
+        const sessionName = `claude-worker-${workerNum}`;
+        
+        const proc = spawn([
+            'tmux', 'new-session', '-d', '-s', sessionName,
+            '-c', '/Users/akshgarg/Documents/try2/Harmonize'
+        ], {
+            stdout: 'pipe',
+            stderr: 'pipe'
+        });
+        
+        await proc.exited;
+        console.log(`Created tmux worker session: ${sessionName}`);
+    } catch (error) {
+        console.error(`Error creating tmux worker session ${workerNum}:`, error);
+        throw error;
+    }
+}
 
 /**
  * Generates a prompt for Claude Code based on a Linear issue
@@ -48,7 +121,7 @@ IMPORTANT:
 - Use the Edit and Write tools to modify files
 - Use Bash tool for git operations
 - Keep changes minimal and focused
-- Work in /Users/akshgarg/Documents/Harmonize directory
+- Work in /Users/akshgarg/Documents/try2/Harmonize directory
 
 When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you finished.
 `;
@@ -61,7 +134,7 @@ When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you fi
 }
 
 /**
- * Spawns a Claude Code instance to work on a Linear issue
+ * Spawns a Claude Code instance to work on a Linear issue using tmux
  */
 export async function launchClaudeForIssue(issueId: string, linearIdentifier: string): Promise<ClaudeSession> {
     console.log(`🚀 Launching Claude Code for issue ${linearIdentifier}...`);
@@ -76,66 +149,33 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         // Generate the prompt
         const prompt = await generatePromptFromIssue(issueId);
         
+        // Get an available tmux worker
+        const workerNumber = await getNextAvailableWorker();
+        const tmuxSession = `claude-worker-${workerNumber}`;
+        
         // Create session object
         const session: ClaudeSession = {
             issueId,
             linearIdentifier,
             startedAt: new Date(),
             status: 'running',
-            output: []
+            output: [],
+            tmuxSession,
+            workerNumber
         };
         
-        // Spawn Claude Code process
-        // Using --print for non-interactive headless mode
-        // --allowedTools lets Claude actually execute commands and edit files
-        const proc = spawn([
-            "claude",
-            "--print",  // Non-interactive headless mode
-            "--allowedTools", "Read", "Write", "Edit", "MultiEdit", 
-            "--allowedTools", "Bash(git:*)", "Bash(bun:*)", "Bash(npm:*)", 
-            "--allowedTools", "Grep", "Glob", "TodoWrite",
-            "--add-dir", "/Users/akshgarg/Documents/Harmonize",
-            "--verbose",  // For debugging
-        ], {
-            cwd: "/Users/akshgarg/Documents/Harmonize",
-            env: {
-                ...process.env,
-                LINEAR_ISSUE_ID: issueId,
-                LINEAR_IDENTIFIER: linearIdentifier
-            },
-            stdin: "pipe",
-            stdout: "pipe",
-            stderr: "pipe"
-        });
-
-        // Send the prompt via stdin using Bun's API
-        if (proc.stdin) {
-            proc.stdin.write(prompt);
-            proc.stdin.end();
-        }
-
-        session.process = proc;
+        // Reserve the worker
+        workerAssignments.set(workerNumber, issueId);
         activeSessions.set(issueId, session);
-
-        // Handle stdout
-        if (proc.stdout) {
-            handleOutputStream(proc.stdout, session, 'stdout');
-        }
-
-        // Handle stderr
-        if (proc.stderr) {
-            handleOutputStream(proc.stderr, session, 'stderr');
-        }
-
-        // Wait for process to complete
-        proc.exited.then(exitCode => {
-            console.log(`✅ Claude Code session for ${linearIdentifier} exited with code ${exitCode}`);
-            session.status = exitCode === 0 ? 'completed' : 'failed';
-            
-            // Update Linear issue based on result
-            updateLinearIssueStatus(issueId, session.status === 'completed');
-        });
-
+        
+        // Launch Claude in the tmux worker with the prompt
+        await attachToClaudeWorker(workerNumber, prompt);
+        
+        console.log(`✅ Claude Code launched for ${linearIdentifier} in ${tmuxSession}`);
+        
+        // Start monitoring the tmux session
+        monitorTmuxSession(session);
+        
         return session;
 
     } catch (error) {
@@ -145,40 +185,77 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
 }
 
 /**
- * Handles output stream from Claude Code process
+ * Monitors a tmux session for Claude Code output
  */
-async function handleOutputStream(stream: ReadableStream, session: ClaudeSession, type: 'stdout' | 'stderr') {
-    const reader = stream.getReader();
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+async function monitorTmuxSession(session: ClaudeSession) {
+    if (!session.tmuxSession) return;
+    
+    console.log(`📊 Starting monitoring for ${session.tmuxSession}`);
+    
+    const checkInterval = setInterval(async () => {
+        try {
+            // Check if session still exists
+            const proc = spawn(['tmux', 'list-sessions'], {
+                stdout: 'pipe',
+                stderr: 'pipe'
+            });
             
-            const text = new TextDecoder().decode(value);
-            session.output.push(`[${type}] ${text}`);
+            await proc.exited;
+            const output = new TextDecoder().decode(await new Response(proc.stdout).arrayBuffer());
             
-            // Log output in real-time
-            if (type === 'stdout') {
-                console.log(`📝 [${session.linearIdentifier}]: ${text}`);
-            } else {
-                console.error(`⚠️  [${session.linearIdentifier}]: ${text}`);
+            if (!session.tmuxSession || !output.includes(session.tmuxSession)) {
+                console.log(`📋 Tmux session ${session.tmuxSession} ended for ${session.linearIdentifier}`);
+                session.status = 'completed';
+                
+                // Clean up worker assignment
+                if (session.workerNumber !== undefined) {
+                    workerAssignments.delete(session.workerNumber);
+                }
+                
+                // Update Linear issue
+                await updateLinearIssueStatus(session.issueId, true);
+                clearInterval(checkInterval);
+                return;
             }
             
-            // Check for task completion
-            if (text.includes(`TASK_COMPLETE: ${session.linearIdentifier}`)) {
+            // Capture recent output from tmux session
+            const captureProc = spawn([
+                'tmux', 'capture-pane', '-t', session.tmuxSession, '-p'
+            ], {
+                stdout: 'pipe',
+                stderr: 'pipe'
+            });
+            
+            await captureProc.exited;
+            const sessionOutput = new TextDecoder().decode(await new Response(captureProc.stdout).arrayBuffer());
+            
+            // Check for completion markers
+            if (sessionOutput.includes(`TASK_COMPLETE: ${session.linearIdentifier}`)) {
                 console.log(`✅ Task ${session.linearIdentifier} marked as complete by Claude`);
                 session.status = 'completed';
+                
+                // Clean up worker assignment
+                if (session.workerNumber !== undefined) {
+                    workerAssignments.delete(session.workerNumber);
+                }
+                
+                await updateLinearIssueStatus(session.issueId, true);
+                clearInterval(checkInterval);
             }
             
-            // Add progress updates to Linear periodically
-            if (type === 'stdout' && session.output.length % 10 === 0) {
-                // Every 10 output lines, add a progress comment
-                await addProgressComment(session.issueId, `Progress update: Currently working...`);
+            // Add progress updates periodically (every 5 checks)
+            if (Math.floor(Date.now() / 30000) % 5 === 0) {
+                await addProgressComment(session.issueId, 
+                    `🔄 Claude Code is working on this issue in ${session.tmuxSession}`);
             }
+            
+        } catch (error) {
+            console.error(`Error monitoring tmux session ${session.tmuxSession}:`, error);
         }
-    } catch (error) {
-        console.error(`Error reading ${type} stream:`, error);
-    }
+    }, 30000); // Check every 30 seconds
+    
+    // Store the interval reference to clean up later
+    (session as any).monitorInterval = checkInterval;
 }
 
 /**
@@ -242,12 +319,35 @@ export function listActiveSessions(): ClaudeSession[] {
  */
 export async function killSession(issueId: string): Promise<boolean> {
     const session = activeSessions.get(issueId);
-    if (!session || !session.process) {
+    if (!session) {
         return false;
     }
     
     try {
-        session.process.kill();
+        // Clear monitoring interval
+        if ((session as any).monitorInterval) {
+            clearInterval((session as any).monitorInterval);
+        }
+        
+        // Kill tmux session if it exists
+        if (session.tmuxSession) {
+            const proc = spawn(['tmux', 'kill-session', '-t', session.tmuxSession], {
+                stdout: 'pipe',
+                stderr: 'pipe'
+            });
+            await proc.exited;
+        }
+        
+        // Kill direct process if it exists
+        if (session.process) {
+            session.process.kill();
+        }
+        
+        // Clean up worker assignment
+        if (session.workerNumber !== undefined) {
+            workerAssignments.delete(session.workerNumber);
+        }
+        
         session.status = 'failed';
         activeSessions.delete(issueId);
         console.log(`🛑 Killed Claude session for ${session.linearIdentifier}`);
