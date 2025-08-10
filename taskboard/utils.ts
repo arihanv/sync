@@ -283,7 +283,7 @@ async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<
 		// Send new claude command with prompt on remote instance
 		await Bun.spawn([
 			"bash", "-c",
-			`${sshCommand} "tmux send-keys -t ${sessionName} 'claude \\"${prompt}\\"' Enter"`
+			`${sshCommand} "tmux send-keys -t ${sessionName} 'claude --dangerously-skip-permissions \\"${prompt}\\"' Enter"`
 		], {
 			stdio: ["pipe", "pipe", "pipe"]
 		}).exited;
@@ -295,7 +295,7 @@ async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<
 	}
 }
 
-await attachToClaudeWorker(3, "make a file called readme.md");
+await attachToClaudeWorker(3, "make a file called test.md");
 
 export { 
 	linearClient, 

@@ -13,3 +13,17 @@ sshpass -p 'modal123' ssh -o ProxyCommand="openssl s_client -quiet -connect YOUR
 - Replace `YOUR_PASSWORD` and `YOUR_HOST` with your actual credentials
 - Copy and paste the command above to connect
 - For remote commands: add your command in quotes at the end
+
+# Make sure to set the IS_SANDBOX environment variable to 1
+`export IS_SANDBOX=1`
+
+# Create the tmux sessions
+`tmux new -s claude-worker-{worker_number}`
+
+# Attach to the tmux session
+`tmux attach -t claude`
+
+# Detach from the tmux session
+`Ctrl+b d`
+
+# List all tmux sessions

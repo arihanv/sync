@@ -16,6 +16,8 @@ harmonize_worker_image = (
         "nodejs",
         "npm",
         "tmux",
+        "ssh",
+        "curl",
     )
     .run_commands(
         "mkdir -p /run/sshd",
@@ -31,6 +33,7 @@ harmonize_worker_image = (
         "ls -la $(npm root -g)/@anthropic-ai/claude-code/ || echo 'Package directory not found'",
         "ln -sf $(npm root -g)/@anthropic-ai/claude-code/cli.js /usr/local/bin/claude || echo 'Symlink failed'",
         "chmod +x /usr/local/bin/claude || echo 'Chmod failed'",
+        "curl -sSf https://sshx.io/get | sh",
     )
     .add_local_file("init-firewall.sh", "/usr/local/bin/init-firewall.sh")
 )
