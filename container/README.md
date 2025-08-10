@@ -3,7 +3,7 @@
 Connect to the Modal SSH instance:
 
 ```bash
-sshpass -p 'YOUR_PASSWORD' ssh -o ProxyCommand="openssl s_client -quiet -connect YOUR_HOST.modal.host:443" root@YOUR_HOST.modal.host
+sshpass -p 'modal123' ssh -o ProxyCommand="openssl s_client -quiet -connect YOUR_HOST.modal.host:443" root@YOUR_HOST.modal.host
 ```
 
 ## Prerequisites
