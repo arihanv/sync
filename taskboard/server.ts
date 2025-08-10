@@ -1,5 +1,5 @@
 import { verifyLinearSignature } from "./utils";
-import { listActiveSessions } from "./claude-launcher";
+import { listActiveSessions, getCurrentWorkerCount } from "./claude-launcher";
 import { launchClaudeTask } from "../test-tmux-launcher";
 import { spawn } from "bun";
 
@@ -12,6 +12,7 @@ Bun.serve({
         return new Response(JSON.stringify({
           status: "OK",
           activeSessions: sessions.length,
+          nextWorkerNumber: getCurrentWorkerCount() + 1,
           sessions: sessions.map(s => ({
             issueId: s.issueId,
             linearIdentifier: s.linearIdentifier,
@@ -25,6 +26,7 @@ Bun.serve({
           headers: { "Content-Type": "application/json" }
         });
       },
+      
       
       // Tmux sessions status
       "/api/tmux": async () => {
@@ -85,19 +87,9 @@ Bun.serve({
             }
             
             const payload = JSON.parse(body);
-
-            const targetAssigneeId = "e52e4e2b-d3e8-4b1c-822f-c4408407cdbf";
             
-            // Check if the payload has an assignee with the target ID
-            const isTargetAssignee = payload.data?.assignee?.id === targetAssigneeId;
-            
-            if (!isTargetAssignee) {
-              console.log('Skipped payload - not assigned to target user');
-              return new Response('OK', { status: 200 });
-            }
-            
-            // Log the full payload for target assignee
-            console.log('Linear webhook received for target assignee:', {
+            // Log the webhook payload
+            console.log('Linear webhook received:', {
               type: payload.type,
               action: payload.action,
               timestamp: new Date().toISOString(),
