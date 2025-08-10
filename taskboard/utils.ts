@@ -326,20 +326,19 @@ async function attachToClaudeWorkerLocal(
 		// Wait a moment for process to terminate
 		await new Promise((resolve) => setTimeout(resolve, 200));
 
-		// Change directory to worktree and start claude
-		await Bun.spawn(
-			[
-				"tmux",
-				"send-keys",
-				"-t",
-				sessionName,
-				`cd ${worktreePath} && claude "${prompt}"`,
-				"Enter",
-			],
-			{
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		).exited;
+		// Send new claude command with prompt using proper shell quoting
+		// Use single quotes to avoid shell interpretation of special characters
+		const quotedPrompt = `'${prompt.replace(/'/g, "'\"'\"'")}'`;
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			`claude ${quotedPrompt}`,
+			"Enter"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
 
 		console.log(
 			`Created worktree ${worktreePath} and restarted claude in session: ${sessionName}`,
@@ -366,6 +365,7 @@ async function attachToClaudeWorkerModal(
 	linearIssueId: string,
 ): Promise<void> {
 	const sessionName = `claude-worker-${workerNum}`;
+	const HOST = process.env.MODAL_HOST || 'localhost';
 	const sshCommand = `sshpass -p 'modal123' ssh -o ProxyCommand="openssl s_client -quiet -connect ${HOST}:443" root@${HOST}`;
 	const branchName = linearIssueId;
 	const worktreePath = `/root/project-${linearIssueId}`;
@@ -447,17 +447,15 @@ async function attachToClaudeWorkerModal(
 		// Wait a moment for process to terminate
 		await new Promise((resolve) => setTimeout(resolve, 500));
 
-		// Change directory to worktree and start claude
-		const claudeCmd = await Bun.spawn(
-			[
-				"bash",
-				"-c",
-				`${sshCommand} "tmux send-keys -t ${sessionName} 'cd ${worktreePath} && claude --dangerously-skip-permissions \\"${prompt}\\"' Enter"`,
-			],
-			{
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		);
+		// Send new claude command with prompt on remote instance (properly escaped)
+		// Double escaping needed: once for local shell, once for remote shell
+		const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/'/g, "\\'");
+		const claudeCmd = await Bun.spawn([
+			"bash", "-c",
+			`${sshCommand} "tmux send-keys -t ${sessionName} 'cd ${worktreePath} && claude --dangerously-skip-permissions \"${escapedPrompt}\"' Enter"`
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		});
 		await claudeCmd.exited;
 
 		console.log(
@@ -469,9 +467,8 @@ async function attachToClaudeWorkerModal(
 	}
 }
 
-// Keep the original function name pointing to modal version for backward compatibility
-const attachToClaudeWorker = attachToClaudeWorkerModal;
-await attachToClaudeWorker(2, "make a file called readme.md", "HAR-6");
+// Keep the original function name pointing to local version (prioritizing local over modal)
+const attachToClaudeWorker = attachToClaudeWorkerLocal;
 
 export {
 	linearClient,
