@@ -266,7 +266,11 @@ async function attachToClaudeWorkerLocal(
 	const branchName = linearIssueId;
 	const worktreePath = `../project-${linearIssueId}`;
 
+	await addCommentToIssue(linearIssueId, `Waking up worker ${workerNum}`);
+
 	try {
+		await addCommentToIssue(linearIssueId, "Spinning up local worker");
+
 		// Create git worktree locally
 		console.log(
 			`Creating git worktree locally: git worktree add ${worktreePath} -b ${branchName} main`,
@@ -289,6 +293,11 @@ async function attachToClaudeWorkerLocal(
 		} else {
 			console.log(`Git worktree created successfully at ${worktreePath}`);
 		}
+
+		await addCommentToIssue(
+			linearIssueId,
+			`Working on worktree ${worktreePath}`,
+		);
 
 		// Verify the worktree directory exists
 		const verifyCmd = Bun.spawn(["ls", "-la", worktreePath], {
@@ -361,8 +370,12 @@ async function attachToClaudeWorkerModal(
 	const branchName = linearIssueId;
 	const worktreePath = `/root/project-${linearIssueId}`;
 
+	await addCommentToIssue(linearIssueId, `Waking up worker ${workerNum}`);
+
 	try {
 		console.log(`Connecting to SSH and managing tmux session: ${sessionName}`);
+
+		await addCommentToIssue(linearIssueId, "Spinning up container");
 
 		// Create git worktree on remote instance (directly go to /root/sync)
 		console.log(
@@ -377,6 +390,11 @@ async function attachToClaudeWorkerModal(
 			{
 				stdio: ["pipe", "pipe", "pipe"],
 			},
+		);
+
+		await addCommentToIssue(
+			linearIssueId,
+			`Working on worktree ${worktreePath}`,
 		);
 
 		const worktreeExitCode = await worktreeCmd.exited;
@@ -453,7 +471,7 @@ async function attachToClaudeWorkerModal(
 
 // Keep the original function name pointing to modal version for backward compatibility
 const attachToClaudeWorker = attachToClaudeWorkerModal;
-await attachToClaudeWorker(2, "make a file called readme.md", "test-issue-6");
+await attachToClaudeWorker(2, "make a file called readme.md", "HAR-6");
 
 export {
 	linearClient,
