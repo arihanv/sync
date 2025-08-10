@@ -14,8 +14,8 @@ async function testTmuxLauncher() {
         const testIssueId = "HAR-14";
         const testIdentifier = "HAR-14";
         
-        console.log("1. Launching Claude for test issue...");
-        const session = await launchClaudeForIssue(testIssueId, testIdentifier);
+        console.log("1. Launching Claude for test issue (LOCAL MODE)...");
+        const session = await launchClaudeForIssue(testIssueId, testIdentifier, true);
         
         console.log("✅ Session created:", {
             issueId: session.issueId,

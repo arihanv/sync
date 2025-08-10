@@ -250,16 +250,68 @@ async function runClaudeInTmux(prompt: string): Promise<void> {
 }
 
 /**
- * Attaches to an existing claude-worker tmux session and restarts claude with new prompt
+ * Attaches to an existing claude-worker tmux session and restarts claude with new prompt (LOCAL VERSION)
+ * All commands are executed locally
+ * @param workerNum - The worker number for the session name (claude-worker-{num})
+ * @param prompt - The new prompt to send to claude
+ * @returns Promise that resolves when the command is sent
+ */
+async function attachToClaudeWorkerLocal(workerNum: number, prompt: string): Promise<void> {
+	const sessionName = `claude-worker-${workerNum}`;
+	
+	try {
+		// Kill any existing claude process in the session (send Ctrl+C twice for containers)
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			"C-c"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
+
+		// Send second Ctrl+C for container exit
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			"C-c"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
+
+		// Wait a moment for process to terminate
+		await new Promise(resolve => setTimeout(resolve, 200));
+
+		// Send new claude command with prompt
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			`claude "${prompt}"`,
+			"Enter"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
+
+		console.log(`Restarted claude in session: ${sessionName}`);
+	} catch (error) {
+		console.error(`Error attaching to claude worker ${workerNum}:`, error);
+		throw error;
+	}
+}
+
+/**
+ * Attaches to an existing claude-worker tmux session and restarts claude with new prompt (MODAL VERSION)
  * All commands are executed on the remote SSH instance
  * @param workerNum - The worker number for the session name (claude-worker-{num})
  * @param prompt - The new prompt to send to claude
  * @returns Promise that resolves when the command is sent
  */
-
-const HOST = "4x0z2oj18w6e5z.r443.modal.host";
-
-async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<void> {
+async function attachToClaudeWorkerModal(workerNum: number, prompt: string): Promise<void> {
 	const sessionName = `claude-worker-${workerNum}`;
 	const sshCommand = `sshpass -p 'modal123' ssh -o ProxyCommand="openssl s_client -quiet -connect ${HOST}:443" root@${HOST}`;
 	
@@ -290,7 +342,7 @@ async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<
 		// Send new claude command with prompt on remote instance
 		const claudeCmd = await Bun.spawn([
 			"bash", "-c",
-			`${sshCommand} "tmux send-keys -t ${sessionName} 'claude --dangerously-skip-permissions \\"${prompt}\\"' Enter"`
+			`${sshCommand} "tmux send-keys -t ${sessionName} 'claude \\"${prompt}\\"' Enter"`
 		], {
 			stdio: ["pipe", "pipe", "pipe"]
 		});
@@ -303,7 +355,9 @@ async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<
 	}
 }
 
-await attachToClaudeWorker(4, "make a file called test.md");
+// Keep the original function name pointing to modal version for backward compatibility
+const attachToClaudeWorker = attachToClaudeWorkerLocal;
+await attachToClaudeWorker(1, "make a file called test.md");
 
 export { 
 	linearClient, 
@@ -313,7 +367,9 @@ export {
 	isIssueBlocked, 
 	checkTaskDependencies,
 	runClaudeInTmux, 
-	attachToClaudeWorker 
+	attachToClaudeWorker,
+	attachToClaudeWorkerLocal,
+	attachToClaudeWorkerModal
 };
 
 export type { DependencyStatus };

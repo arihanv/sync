@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "bun";
-import { linearClient, attachToClaudeWorker } from "./utils";
+import { linearClient, attachToClaudeWorker, attachToClaudeWorkerLocal } from "./utils";
 
 interface ClaudeSession {
     issueId: string;
@@ -136,7 +136,7 @@ When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you fi
 /**
  * Spawns a Claude Code instance to work on a Linear issue using tmux
  */
-export async function launchClaudeForIssue(issueId: string, linearIdentifier: string): Promise<ClaudeSession> {
+export async function launchClaudeForIssue(issueId: string, linearIdentifier: string, useLocal: boolean = true): Promise<ClaudeSession> {
     console.log(`🚀 Launching Claude Code for issue ${linearIdentifier}...`);
     
     // Check if session already exists
@@ -169,7 +169,11 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         activeSessions.set(issueId, session);
         
         // Launch Claude in the tmux worker with the prompt
-        await attachToClaudeWorker(workerNumber, prompt);
+        if (useLocal) {
+            await attachToClaudeWorkerLocal(workerNumber, prompt);
+        } else {
+            await attachToClaudeWorker(workerNumber, prompt);
+        }
         
         console.log(`✅ Claude Code launched for ${linearIdentifier} in ${tmuxSession}`);
         
