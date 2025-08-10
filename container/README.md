@@ -15,7 +15,11 @@ sshpass -p 'modal123' ssh -o ProxyCommand="openssl s_client -quiet -connect YOUR
 - For remote commands: add your command in quotes at the end
 
 # Make sure to set the IS_SANDBOX environment variable to 1
-`export IS_SANDBOX=1`
+```
+export IS_SANDBOX=1
+export ANTHROPIC_API_KEY=""
+```
+
 
 # Create the tmux sessions
 `tmux new -s claude-worker-{worker_number}`

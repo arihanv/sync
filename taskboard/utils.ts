@@ -256,37 +256,45 @@ async function runClaudeInTmux(prompt: string): Promise<void> {
  * @param prompt - The new prompt to send to claude
  * @returns Promise that resolves when the command is sent
  */
+
+const HOST = "4x0z2oj18w6e5z.r443.modal.host";
+
 async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<void> {
 	const sessionName = `claude-worker-${workerNum}`;
-	const sshCommand = "sshpass -p 'modal123' ssh -o ProxyCommand=\"openssl s_client -quiet -connect by3ub7t3766now.r432.modal.host:443\" root@by3ub7t3766now.r432.modal.host";
+	const sshCommand = `sshpass -p 'modal123' ssh -o ProxyCommand="openssl s_client -quiet -connect ${HOST}:443" root@${HOST}`;
 	
 	try {
+		console.log(`Connecting to SSH and managing tmux session: ${sessionName}`);
+		
 		// Kill any existing claude process in the session (send Ctrl+C twice for containers)
-		await Bun.spawn([
+		const killCmd1 = await Bun.spawn([
 			"bash", "-c",
 			`${sshCommand} "tmux send-keys -t ${sessionName} C-c"`
 		], {
 			stdio: ["pipe", "pipe", "pipe"]
-		}).exited;
+		});
+		await killCmd1.exited;
 
 		// Send second Ctrl+C for container exit
-		await Bun.spawn([
+		const killCmd2 = await Bun.spawn([
 			"bash", "-c", 
 			`${sshCommand} "tmux send-keys -t ${sessionName} C-c"`
 		], {
 			stdio: ["pipe", "pipe", "pipe"]
-		}).exited;
+		});
+		await killCmd2.exited;
 
 		// Wait a moment for process to terminate
-		await new Promise(resolve => setTimeout(resolve, 200));
+		await new Promise(resolve => setTimeout(resolve, 500));
 
 		// Send new claude command with prompt on remote instance
-		await Bun.spawn([
+		const claudeCmd = await Bun.spawn([
 			"bash", "-c",
 			`${sshCommand} "tmux send-keys -t ${sessionName} 'claude --dangerously-skip-permissions \\"${prompt}\\"' Enter"`
 		], {
 			stdio: ["pipe", "pipe", "pipe"]
-		}).exited;
+		});
+		await claudeCmd.exited;
 
 		console.log(`Restarted claude in remote session: ${sessionName}`);
 	} catch (error) {
@@ -295,7 +303,7 @@ async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<
 	}
 }
 
-await attachToClaudeWorker(3, "make a file called test.md");
+await attachToClaudeWorker(4, "make a file called test.md");
 
 export { 
 	linearClient, 
