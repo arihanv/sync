@@ -8,6 +8,7 @@ You should consult the linear project overview to get a grasp on the project req
 - Frequently commit your code as you go through the development process, so we can be sure that we're tracking our work properly. 
 - For each new feature/linear issue, create a separate git branch that you work out of
 - It's possible that we'll eventually have multiple agents working collaboratively, so on each feature you should also add docstrings, which describe how to interface with this feature.
+- At the end of development for each feature, create a pull request to merge the feature branch back to the main branch
 
 ## How to communicate across agents. 
 - Since multiple agents are going to be working on this feature together, maintain a summary of the changes that you made in changelog.md
