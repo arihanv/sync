@@ -104,4 +104,89 @@ async function isIssueBlocked(issueId: string): Promise<boolean> {
 	}
 }
 
-export { linearClient, verifyLinearSignature, addCommentToIssue, createBlockingRelation, isIssueBlocked };
+/**
+ * Creates a tmux session and runs claude with the given prompt
+ * @param prompt - The prompt to send to claude
+ * @returns Promise that resolves when the subprocess completes
+ */
+async function runClaudeInTmux(prompt: string): Promise<void> {
+	const sessionName = `claude-${Date.now()}`;
+	
+	try {
+		const proc = Bun.spawn([
+			"tmux",
+			"new-session",
+			"-d",
+			"-s",
+			sessionName,
+			"claude",
+			prompt
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		});
+		
+		await proc.exited;
+		console.log(`Claude session created in tmux session: ${sessionName}`);
+	} catch (error) {
+		console.error("Error creating tmux session with claude:", error);
+		throw error;
+	}
+}
+
+/**
+ * Attaches to an existing claude-worker tmux session and restarts claude with new prompt
+ * @param workerNum - The worker number for the session name (claude-worker-{num})
+ * @param prompt - The new prompt to send to claude
+ * @returns Promise that resolves when the command is sent
+ */
+async function attachToClaudeWorker(workerNum: number, prompt: string): Promise<void> {
+	const sessionName = `claude-worker-${workerNum}`;
+	
+	try {
+		// Kill any existing claude process in the session (send Ctrl+C twice for containers)
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			"C-c"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
+
+		// Send second Ctrl+C for container exit
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			"C-c"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
+
+		// Wait a moment for process to terminate
+		await new Promise(resolve => setTimeout(resolve, 200));
+
+		// Send new claude command with prompt
+		await Bun.spawn([
+			"tmux",
+			"send-keys",
+			"-t",
+			sessionName,
+			`claude "${prompt}"`,
+			"Enter"
+		], {
+			stdio: ["pipe", "pipe", "pipe"]
+		}).exited;
+
+		console.log(`Restarted claude in session: ${sessionName}`);
+	} catch (error) {
+		console.error(`Error attaching to claude worker ${workerNum}:`, error);
+		throw error;
+	}
+}
+
+await attachToClaudeWorker(1, "make a file called readme.md");
+
+export { linearClient, verifyLinearSignature, addCommentToIssue, createBlockingRelation, isIssueBlocked, runClaudeInTmux, attachToClaudeWorker };
