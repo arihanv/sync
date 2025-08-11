@@ -147,10 +147,20 @@ When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you fi
 export async function launchClaudeForIssue(issueId: string, linearIdentifier: string, useLocal = false): Promise<ClaudeSession> {
     console.log(`🚀 Launching Claude Code for issue ${linearIdentifier}...`);
     
-    // Check if session already exists
+    // Check if session already exists and clean up failed sessions
     if (activeSessions.has(issueId)) {
-        console.log(`⚠️  Session already exists for ${linearIdentifier}`);
-        return activeSessions.get(issueId) as ClaudeSession;
+        const existingSession = activeSessions.get(issueId);
+        if (existingSession && existingSession.status === 'running') {
+            console.log(`⚠️  Session already exists for ${linearIdentifier}`);
+            return existingSession;
+        } else {
+            // Clean up failed/completed sessions
+            console.log(`🧹 Cleaning up stale session for ${linearIdentifier}`);
+            if (existingSession?.workerNumber !== undefined) {
+                workerAssignments.delete(existingSession.workerNumber);
+            }
+            activeSessions.delete(issueId);
+        }
     }
 
     try {
@@ -176,13 +186,13 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         workerAssignments.set(workerNumber, issueId);
         activeSessions.set(issueId, session);
         
-        // Mark the issue as in progress since a worker is now assigned
-        try {
-            await markIssueAsInProgress(issueId);
-            console.log(`📋 Marked issue ${linearIdentifier} as in progress`);
-        } catch (error) {
-            console.error(`Failed to mark issue ${linearIdentifier} as in progress:`, error);
-        }
+        // // Mark the issue as in progress since a worker is now assigned
+        // try {
+        //     await markIssueAsInProgress(issueId);
+        //     console.log(`📋 Marked issue ${linearIdentifier} as in progress`);
+        // } catch (error) {
+        //     console.error(`Failed to mark issue ${linearIdentifier} as in progress:`, error);
+        // }
         
         // Launch Claude in the tmux worker with the prompt
         if (useLocal) {
@@ -200,6 +210,17 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
 
     } catch (error) {
         console.error(`❌ Error launching Claude for ${linearIdentifier}:`, error);
+        
+        // Clean up the session and worker assignment if launch failed
+        if (activeSessions.has(issueId)) {
+            const failedSession = activeSessions.get(issueId);
+            if (failedSession?.workerNumber !== undefined) {
+                workerAssignments.delete(failedSession.workerNumber);
+            }
+            activeSessions.delete(issueId);
+            console.log(`🧹 Cleaned up failed session for ${linearIdentifier}`);
+        }
+        
         throw error;
     }
 }

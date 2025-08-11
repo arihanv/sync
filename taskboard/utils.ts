@@ -399,6 +399,36 @@ async function attachToClaudeWorkerModal(
 		console.log(
 			`Creating git worktree: cd /root/sync && git worktree add ${worktreePath} -b ${branchName} test-branch`,
 		);
+		
+		// First, check if the base branch exists
+		const checkBranchCmd = Bun.spawn(
+			[
+				"bash",
+				"-c",
+				`${sshCommand} "cd /root/sync && git branch --list test-branch"`,
+			],
+			{
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
+		
+		const checkBranchExitCode = await checkBranchCmd.exited;
+		if (checkBranchExitCode !== 0) {
+			console.error(`Base branch 'test-branch' does not exist. Creating it first.`);
+			// Create the base branch if it doesn't exist
+			const createBranchCmd = Bun.spawn(
+				[
+					"bash",
+					"-c",
+					`${sshCommand} "cd /root/sync && git checkout -b test-branch"`,
+				],
+				{
+					stdio: ["pipe", "pipe", "pipe"],
+				},
+			);
+			await createBranchCmd.exited;
+		}
+		
 		const worktreeCmd = Bun.spawn(
 			[
 				"bash",
@@ -420,9 +450,12 @@ async function attachToClaudeWorkerModal(
 			console.error(
 				`Git worktree command failed with exit code: ${worktreeExitCode}`,
 			);
-			// Read stderr to see what went wrong
+			// Read both stdout and stderr to see what went wrong
+			const stdout = await new Response(worktreeCmd.stdout).text();
 			const stderr = await new Response(worktreeCmd.stderr).text();
+			console.error(`Git worktree stdout: ${stdout}`);
 			console.error(`Git worktree stderr: ${stderr}`);
+			throw new Error(`Failed to create git worktree: ${stderr || stdout}`);
 		} else {
 			console.log(`Git worktree created successfully at ${worktreePath}`);
 		}
