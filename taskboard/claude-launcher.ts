@@ -6,6 +6,7 @@
 
 import { spawn } from "bun";
 import { linearClient, attachToClaudeWorker, attachToClaudeWorkerLocal, addCommentToIssue, markIssueAsInProgress } from "./utils";
+import { dispatchToWorker, getPlatformStatus, type PlatformConfig } from "./platform-coordinator";
 
 interface ClaudeSession {
     issueId: string;
@@ -194,11 +195,13 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         //     console.error(`Failed to mark issue ${linearIdentifier} as in progress:`, error);
         // }
         
-        // Launch Claude in the tmux worker with the prompt
-        if (useLocal) {
-            await attachToClaudeWorkerLocal(workerNumber, prompt, linearIdentifier);
-        } else {
-            await attachToClaudeWorker(workerNumber, prompt, linearIdentifier);
+        // Launch Claude in the tmux worker with the prompt using cross-platform coordination
+        const dispatchResult = await dispatchToWorker(workerNumber, prompt, linearIdentifier, {
+            mode: useLocal ? 'local' : 'auto'
+        });
+        
+        if (!dispatchResult.success) {
+            throw new Error(`Cross-platform dispatch failed: ${dispatchResult.error}`);
         }
         
         console.log(`✅ Claude Code launched for ${linearIdentifier} in ${tmuxSession}`);

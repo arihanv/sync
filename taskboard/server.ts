@@ -1,5 +1,6 @@
 import { verifyLinearSignature, addCommentToIssue, isIssueBlocked } from "./utils";
 import { launchClaudeForIssue, getSessionStatus, listActiveSessions } from "./claude-launcher";
+import { getPlatformStatus } from "./platform-coordinator";
 import { spawn } from "bun";
 
 Bun.serve({
@@ -23,6 +24,26 @@ Bun.serve({
         }), {
           headers: { "Content-Type": "application/json" }
         });
+      },
+      
+      // Cross-platform coordination status
+      "/api/platform": async () => {
+        try {
+          const platformStatus = await getPlatformStatus();
+          return new Response(JSON.stringify({
+            status: "OK",
+            ...platformStatus
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: "ERROR",
+            error: error instanceof Error ? error.message : String(error)
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
       },
       
       // Tmux sessions status
