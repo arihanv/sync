@@ -154,4 +154,16 @@ All entries should follow this format:
 - **Usage**: `dispatchToWorker(workerNum, prompt, issueId, { mode: 'auto' })` automatically coordinates platform selection
 - **Status**: Cross-platform coordination fully implemented and integrated into existing orchestration system
 
+### **Date**: 2025-08-11 [HAR-84]
+**Agent**: Claude Code SuperClaude  
+**Changes**: HAR-84 - Merged latest branches into single repository
+- **Merged HAR-68**: Rate limiting layer for Linear API coordination
+  - Added comprehensive rate limiting system to prevent API throttling
+  - Integrated rate-limited client throughout taskboard utilities
+- **Merged HAR-73**: Cross-platform coordination implementation  
+  - Added platform-agnostic worker dispatch system
+  - Integrated automatic platform detection and failover capabilities
+- **Resolved Conflicts**: Combined changelog entries from both merged branches
+- **Status**: Latest feature branches successfully consolidated into unified codebase
+
 ---
