@@ -104,4 +104,22 @@ All entries should follow this format:
 - **Testing**: Created `test-tmux-launcher.ts` for verification of tmux integration
 - **Status**: Claude Code tasks now launch in managed tmux sessions with proper scheduling
 
+### **Date**: 2025-08-11 00:35
+**Agent**: Claude Code SuperClaude  
+**Changes**: HAR-60 - Setup a server for sharing changelogs even before merges
+- **Enhanced `taskboard/server.ts`**: Added changelog sharing endpoints with graceful Linear dependency handling
+  - **New Endpoint**: `/changelog` - Serves raw markdown changelog content with proper CORS headers
+  - **New Endpoint**: `/changelog.html` - Serves formatted HTML changelog with professional styling
+  - **Graceful Degradation**: Server starts without Linear API credentials, disabling only webhook functionality
+  - **Enhanced Status**: `/api/status` now indicates Linear integration status and available endpoints
+- **Features Added**:
+  - Real-time changelog sharing before code merges via HTTP endpoints
+  - HTML formatting with responsive design and professional styling
+  - Cross-origin resource sharing (CORS) support for web integration
+  - Graceful handling of missing Linear API credentials
+  - Clear status indication of available services vs. disabled features
+- **Testing**: Created `test-changelog-server.ts` for endpoint verification and functionality testing
+- **Integration**: Maintains existing Linear webhook and task orchestration when credentials available
+- **Status**: Changelog can now be shared via HTTP before merges, supporting both markdown and HTML formats
+
 ---
