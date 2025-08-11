@@ -1,0 +1,5 @@
+HAR-6 Test Implementation
+
+This file serves as a simple test implementation for Linear issue HAR-6.
+
+Test completed successfully.
