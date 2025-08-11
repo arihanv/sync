@@ -104,4 +104,22 @@ All entries should follow this format:
 - **Testing**: Created `test-tmux-launcher.ts` for verification of tmux integration
 - **Status**: Claude Code tasks now launch in managed tmux sessions with proper scheduling
 
+### **Date**: 2025-08-11 [HAR-68]
+**Agent**: Claude Code SuperClaude  
+**Changes**: HAR-68 - Added rate limiting layer to coordinate with Linear API
+- **Created `taskboard/rate-limiter.ts`**: Comprehensive rate limiting system for Linear API coordination
+  - **Rate Limiting**: Configurable requests per second (default: 8/sec) with burst support (30 requests)
+  - **Queue Management**: Priority-based request queue with automatic processing
+  - **Retry Logic**: Intelligent retry with exponential backoff for 429 rate limit errors
+  - **API Wrapper**: Wraps common Linear API methods (`issue`, `createComment`, `createIssueRelation`)
+  - **Monitoring**: Queue status monitoring with metrics for debugging
+- **Enhanced `taskboard/utils.ts`**: Integrated rate-limited client
+  - **Replaced**: Direct LinearClient with RateLimitedLinearClient wrapper
+  - **Configuration**: Conservative rate limits (8 req/sec, 3 retries, 1s base delay)
+  - **Compatibility**: Maintains existing API interface for seamless integration
+- **Testing**: Created test suite to verify rate limiting behavior
+  - **Mock Testing**: `test-rate-limiter.ts` validates queue processing and timing
+  - **Concurrent Requests**: Ensures multiple simultaneous calls are properly throttled
+- **Status**: All Linear API calls now coordinate through rate limiter to prevent 429 errors
+
 ---
