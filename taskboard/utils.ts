@@ -1,8 +1,17 @@
 import { LinearClient, LinearDocument } from "@linear/sdk";
+import { RateLimitedLinearClient } from "./rate-limiter";
 
 // Bun automatically loads .env, so no need for dotenv
-const linearClient = new LinearClient({
+const baseLinearClient = new LinearClient({
 	apiKey: process.env.LINEAR_API_KEY,
+});
+
+// Create rate-limited client instance
+const linearClient = new RateLimitedLinearClient(baseLinearClient, {
+	maxRequestsPerSecond: 8,
+	maxBurstRequests: 30,
+	retryDelayMs: 1000,
+	maxRetries: 3,
 });
 
 /**
