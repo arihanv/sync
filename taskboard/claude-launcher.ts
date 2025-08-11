@@ -25,9 +25,20 @@ const activeSessions = new Map<string, ClaudeSession>();
 // Track which tmux workers are in use
 const workerAssignments = new Map<number, string>(); // workerNum -> issueId
 
+const TOTAL_WORKERS = 4;
+const MONITORING_INTERVAL_MS = 30000;
+const PROGRESS_UPDATE_INTERVAL = 5;
+const SESSION_CLEANUP_DELAY = 200;
+
 // Round-robin worker counter (starts at 0, cycles through 1-4)  
 let currentWorkerIndex = 0;
-const TOTAL_WORKERS = 4;
+
+/**
+ * Generates a consistent tmux session name for a worker
+ */
+function generateTmuxSessionName(workerNumber: number): string {
+    return `claude-worker-${workerNumber}`;
+}
 
 /**
  * Gets list of available tmux sessions for Claude workers
@@ -76,7 +87,7 @@ async function getNextAvailableWorker(): Promise<number> {
  */
 async function createTmuxWorkerSession(workerNum: number): Promise<void> {
     try {
-        const sessionName = `claude-worker-${workerNum}`;
+        const sessionName = generateTmuxSessionName(workerNum);
         
         const proc = spawn([
             'tmux', 'new-session', '-d', '-s', sessionName,
@@ -169,7 +180,7 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         
         // Get an available tmux worker
         const workerNumber = await getNextAvailableWorker();
-        const tmuxSession = `claude-worker-${workerNumber}`;
+        const tmuxSession = generateTmuxSessionName(workerNumber);
         
         // Create session object
         const session: ClaudeSession = {
@@ -284,8 +295,8 @@ async function monitorTmuxSession(session: ClaudeSession) {
                 clearInterval(checkInterval);
             }
             
-            // Add progress updates periodically (every 5 checks)
-            if (Math.floor(Date.now() / 30000) % 5 === 0) {
+            // Add progress updates periodically
+            if (Math.floor(Date.now() / MONITORING_INTERVAL_MS) % PROGRESS_UPDATE_INTERVAL === 0) {
                 await addProgressComment(session.issueId, 
                     `🔄 Claude Code is working on this issue in ${session.tmuxSession}`);
             }
@@ -293,7 +304,7 @@ async function monitorTmuxSession(session: ClaudeSession) {
         } catch (error) {
             console.error(`Error monitoring tmux session ${session.tmuxSession}:`, error);
         }
-    }, 30000); // Check every 30 seconds
+    }, MONITORING_INTERVAL_MS);
     
     // Store the interval reference to clean up later
     session.monitorInterval = checkInterval;
@@ -327,9 +338,10 @@ async function updateLinearIssueStatus(issueId: string, success: boolean) {
  */
 async function addProgressComment(issueId: string, content: string) {
     try {
-        // Truncate very long content
-        const truncatedContent = content.length > 1000 
-            ? `${content.substring(0, 997)}...`
+        // Truncate very long content  
+        const MAX_COMMENT_LENGTH = 1000;
+        const truncatedContent = content.length > MAX_COMMENT_LENGTH 
+            ? `${content.substring(0, MAX_COMMENT_LENGTH - 3)}...`
             : content;
         
         await addCommentToIssue(issueId, `🤖 Claude Code: ${truncatedContent}`);

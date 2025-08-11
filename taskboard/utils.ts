@@ -1,9 +1,52 @@
 import { LinearClient, LinearDocument } from "@linear/sdk";
 
+// Constants
+const MAX_COMMENT_LENGTH = 1000;
+const PROGRESS_COMMENT_PREFIX = "🤖 Claude Code: ";
+const COMPLETED_STATES = ["done", "complete"];
+const IN_PROGRESS_STATES = ["progress", "doing", "active"];
+
+// Types
+interface ErrorResult {
+	success: false;
+	error: string;
+}
+
+interface SuccessResult<T = void> {
+	success: true;
+	data: T;
+}
+
+type Result<T = void> = SuccessResult<T> | ErrorResult;
+
 // Bun automatically loads .env, so no need for dotenv
 const linearClient = new LinearClient({
 	apiKey: process.env.LINEAR_API_KEY,
 });
+
+/**
+ * Helper function to find team state by keywords
+ */
+async function findStateByKeywords(team: any, keywords: string[]): Promise<any> {
+	const states = await team.states();
+	return states.nodes.find((state: any) => 
+		keywords.some(keyword => state.name.toLowerCase().includes(keyword))
+	);
+}
+
+/**
+ * Helper function to get issue team safely
+ */
+async function getIssueTeam(issueId: string) {
+	const issue = await linearClient.issue(issueId);
+	const team = await issue.team;
+	
+	if (!team) {
+		throw new Error(`No team found for issue ${issueId}`);
+	}
+	
+	return { issue, team };
+}
 
 /**
  * Creates a blocking relationship between two issues
@@ -572,19 +615,8 @@ EOF"`,
  */
 async function markIssueAsComplete(issueId: string): Promise<boolean> {
 	try {
-		const issue = await linearClient.issue(issueId);
-		const team = await issue.team;
-		
-		if (!team) {
-			console.error(`No team found for issue ${issueId}`);
-			return false;
-		}
-
-		const states = await team.states();
-		const completedState = states.nodes.find(
-			state => state.name.toLowerCase().includes('done') || 
-					 state.name.toLowerCase().includes('complete')
-		);
+		const { issue, team } = await getIssueTeam(issueId);
+		const completedState = await findStateByKeywords(team, COMPLETED_STATES);
 
 		if (!completedState) {
 			console.error(`No completed state found for team ${team.name}`);
@@ -610,20 +642,8 @@ async function markIssueAsComplete(issueId: string): Promise<boolean> {
  */
 async function markIssueAsInProgress(issueId: string): Promise<boolean> {
 	try {
-		const issue = await linearClient.issue(issueId);
-		const team = await issue.team;
-		
-		if (!team) {
-			console.error(`No team found for issue ${issueId}`);
-			return false;
-		}
-
-		const states = await team.states();
-		const inProgressState = states.nodes.find(
-			state => state.name.toLowerCase().includes('progress') || 
-					 state.name.toLowerCase().includes('doing') ||
-					 state.name.toLowerCase().includes('active')
-		);
+		const { issue, team } = await getIssueTeam(issueId);
+		const inProgressState = await findStateByKeywords(team, IN_PROGRESS_STATES);
 
 		if (!inProgressState) {
 			console.error(`No in progress state found for team ${team.name}`);

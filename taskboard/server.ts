@@ -85,10 +85,10 @@ Bun.serve({
             
             const payload = JSON.parse(body);
 
-            const targetAssigneeId = "e52e4e2b-d3e8-4b1c-822f-c4408407cdbf";
+            const TARGET_ASSIGNEE_ID = "e52e4e2b-d3e8-4b1c-822f-c4408407cdbf";
             
             // Check if the payload has an assignee with the target ID
-            const isTargetAssignee = payload.data?.assignee?.id === targetAssigneeId;
+            const isTargetAssignee = payload.data?.assignee?.id === TARGET_ASSIGNEE_ID;
             
             if (!isTargetAssignee) {
               console.log('Skipped payload - not assigned to target user');
@@ -109,9 +109,9 @@ Bun.serve({
             
             if (issueCreatedAt) {
               const timeDifferenceMs = currentTime.getTime() - issueCreatedAt.getTime();
-              const oneMinuteMs = 60 * 1000; // 1 minute in milliseconds
+              const ONE_MINUTE_MS = 60 * 1000;
               
-              if (timeDifferenceMs > oneMinuteMs) {
+              if (timeDifferenceMs > ONE_MINUTE_MS) {
                 console.log(`Skipped issue ${payload.data?.identifier} - created ${Math.round(timeDifferenceMs / 1000)}s ago (more than 1 minute old)`);
                 return new Response('OK', { status: 200 });
               }
