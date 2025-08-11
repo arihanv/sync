@@ -5,17 +5,18 @@
  */
 
 import { spawn } from "bun";
-import { linearClient, attachToClaudeWorker, attachToClaudeWorkerLocal } from "./utils";
+import { linearClient, attachToClaudeWorker, attachToClaudeWorkerLocal, addCommentToIssue, markIssueAsInProgress } from "./utils";
 
 interface ClaudeSession {
     issueId: string;
     linearIdentifier: string;
-    process?: any;
+    process?: unknown;
     startedAt: Date;
     status: 'running' | 'completed' | 'failed';
     output: string[];
     tmuxSession?: string;
     workerNumber?: number;
+    monitorInterval?: NodeJS.Timeout;
 }
 
 // Active Claude sessions
@@ -23,6 +24,10 @@ const activeSessions = new Map<string, ClaudeSession>();
 
 // Track which tmux workers are in use
 const workerAssignments = new Map<number, string>(); // workerNum -> issueId
+
+// Round-robin worker counter (starts at 0, cycles through 1-4)  
+let currentWorkerIndex = 0;
+const TOTAL_WORKERS = 4;
 
 /**
  * Gets list of available tmux sessions for Claude workers
@@ -41,7 +46,7 @@ async function getAvailableTmuxWorkers(): Promise<number[]> {
             .filter(line => line.includes('claude-worker-'))
             .map(line => {
                 const match = line.match(/claude-worker-(\d+)/);
-                return match?.[1] ? parseInt(match[1]) : null;
+                return match?.[1] ? Number.parseInt(match[1]) : null;
             })
             .filter((num): num is number => num !== null);
         
@@ -54,19 +59,16 @@ async function getAvailableTmuxWorkers(): Promise<number[]> {
 }
 
 /**
- * Finds the next available tmux worker or creates a new one
+ * Gets the next available worker using round-robin scheduling (workers 1-4)
  */
 async function getNextAvailableWorker(): Promise<number> {
-    const availableWorkers = await getAvailableTmuxWorkers();
+    // Increment counter and wrap around (1-4)
+    currentWorkerIndex = (currentWorkerIndex % TOTAL_WORKERS) + 1;
+    const workerNum = currentWorkerIndex;
     
-    if (availableWorkers.length > 0) {
-        return Math.min(...availableWorkers);
-    }
-    
-    // If no workers available, create a new one
-    const nextWorkerNum = Math.max(0, ...Array.from(workerAssignments.keys())) + 1;
-    await createTmuxWorkerSession(nextWorkerNum);
-    return nextWorkerNum;
+    // Ensure the worker session exists
+    await createTmuxWorkerSession(workerNum);
+    return workerNum;
 }
 
 /**
@@ -115,13 +117,19 @@ REQUIRED ACTIONS (execute these steps):
 5. Update changelog.md with a brief entry about your changes
 6. Commit your changes: git add -A && git commit -m "${issueData.identifier}: ${issueData.title}"
 7. Push the branch: git push -u origin ${issueData.branchName || `feature/${issueData.identifier.toLowerCase()}`}
+8. Make a pull request to merge the branch back to the main-branch
+9. Also, at the end, use the taskboard/update-issue-status.sh script to mark the issue as complete.
+        Run taskboard/update-issue-status.sh script {issueId} complete
+
+Make a pr with:
+user.email=arihanvaranasi@gmail.com
+user.name=arihanv
 
 IMPORTANT:
 - You MUST actually execute these steps, not just describe them
 - Use the Edit and Write tools to modify files
 - Use Bash tool for git operations
 - Keep changes minimal and focused
-- Work in /Users/akshgarg/Documents/try2/Harmonize directory
 
 When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you finished.
 `;
@@ -136,13 +144,13 @@ When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you fi
 /**
  * Spawns a Claude Code instance to work on a Linear issue using tmux
  */
-export async function launchClaudeForIssue(issueId: string, linearIdentifier: string, useLocal: boolean = true): Promise<ClaudeSession> {
+export async function launchClaudeForIssue(issueId: string, linearIdentifier: string, useLocal = false): Promise<ClaudeSession> {
     console.log(`🚀 Launching Claude Code for issue ${linearIdentifier}...`);
     
     // Check if session already exists
     if (activeSessions.has(issueId)) {
         console.log(`⚠️  Session already exists for ${linearIdentifier}`);
-        return activeSessions.get(issueId)!;
+        return activeSessions.get(issueId) as ClaudeSession;
     }
 
     try {
@@ -168,11 +176,19 @@ export async function launchClaudeForIssue(issueId: string, linearIdentifier: st
         workerAssignments.set(workerNumber, issueId);
         activeSessions.set(issueId, session);
         
+        // Mark the issue as in progress since a worker is now assigned
+        try {
+            await markIssueAsInProgress(issueId);
+            console.log(`📋 Marked issue ${linearIdentifier} as in progress`);
+        } catch (error) {
+            console.error(`Failed to mark issue ${linearIdentifier} as in progress:`, error);
+        }
+        
         // Launch Claude in the tmux worker with the prompt
         if (useLocal) {
-            await attachToClaudeWorkerLocal(workerNumber, prompt);
+            await attachToClaudeWorkerLocal(workerNumber, prompt, linearIdentifier);
         } else {
-            await attachToClaudeWorker(workerNumber, prompt);
+            await attachToClaudeWorker(workerNumber, prompt, linearIdentifier);
         }
         
         console.log(`✅ Claude Code launched for ${linearIdentifier} in ${tmuxSession}`);
@@ -259,7 +275,7 @@ async function monitorTmuxSession(session: ClaudeSession) {
     }, 30000); // Check every 30 seconds
     
     // Store the interval reference to clean up later
-    (session as any).monitorInterval = checkInterval;
+    session.monitorInterval = checkInterval;
 }
 
 /**
@@ -278,7 +294,6 @@ async function updateLinearIssueStatus(issueId: string, success: boolean) {
             console.log(`✅ Updated ${issueId} to completed`);
         } else {
             // Add comment about failure
-            const { addCommentToIssue } = await import("./utils");
             await addCommentToIssue(issueId, "⚠️ Claude Code execution failed. Manual intervention may be required.");
         }
     } catch (error) {
@@ -291,16 +306,14 @@ async function updateLinearIssueStatus(issueId: string, success: boolean) {
  */
 async function addProgressComment(issueId: string, content: string) {
     try {
-        const { addCommentToIssue } = await import("./utils");
-        
         // Truncate very long content
         const truncatedContent = content.length > 1000 
-            ? content.substring(0, 997) + "..." 
+            ? `${content.substring(0, 997)}...`
             : content;
         
         await addCommentToIssue(issueId, `🤖 Claude Code: ${truncatedContent}`);
     } catch (error) {
-        console.error(`Error adding progress comment:`, error);
+        console.error("Error adding progress comment:", error);
     }
 }
 
@@ -329,8 +342,8 @@ export async function killSession(issueId: string): Promise<boolean> {
     
     try {
         // Clear monitoring interval
-        if ((session as any).monitorInterval) {
-            clearInterval((session as any).monitorInterval);
+        if (session.monitorInterval) {
+            clearInterval(session.monitorInterval);
         }
         
         // Kill tmux session if it exists
@@ -343,8 +356,8 @@ export async function killSession(issueId: string): Promise<boolean> {
         }
         
         // Kill direct process if it exists
-        if (session.process) {
-            session.process.kill();
+        if (session.process && typeof session.process === 'object' && 'kill' in session.process) {
+            (session.process as { kill(): void }).kill();
         }
         
         // Clean up worker assignment
@@ -357,7 +370,7 @@ export async function killSession(issueId: string): Promise<boolean> {
         console.log(`🛑 Killed Claude session for ${session.linearIdentifier}`);
         return true;
     } catch (error) {
-        console.error(`Error killing session:`, error);
+        console.error("Error killing session:", error);
         return false;
     }
 }

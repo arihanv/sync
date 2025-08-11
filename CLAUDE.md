@@ -1,5 +1,7 @@
 IMPORTANT:
 - At the end of development for each feature, YOU MUST create a pull request to merge the feature branch back to the main branch after pushing it to the remote repository.
+- Also, at the end, use the taskboard/update-issue-status.sh script to mark the issue as complete.
+        Run taskboard/update-issue-status.sh script {issueId} complete
 
 # Project Overview
 You should consult the linear project overview to get a grasp on the project requirements. Note, the main information will be stored on a project not issue level. We should start every session by consulting the project description, reading the changelog to see what's already been built out, and then checking the active issues that aren't in progress to get started on them.

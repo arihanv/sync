@@ -103,6 +103,20 @@ Bun.serve({
               payload: payload
             });
             
+            // Check if the issue is more than 1 minute old
+            const currentTime = new Date();
+            const issueCreatedAt = payload.data?.createdAt ? new Date(payload.data.createdAt) : null;
+            
+            if (issueCreatedAt) {
+              const timeDifferenceMs = currentTime.getTime() - issueCreatedAt.getTime();
+              const oneMinuteMs = 60 * 1000; // 1 minute in milliseconds
+              
+              if (timeDifferenceMs > oneMinuteMs) {
+                console.log(`Skipped issue ${payload.data?.identifier} - created ${Math.round(timeDifferenceMs / 1000)}s ago (more than 1 minute old)`);
+                return new Response('OK', { status: 200 });
+              }
+            }
+            
             // Process the assigned issue
             if (payload.data?.id && payload.data?.identifier) {
               const issueId = payload.data.id;

@@ -273,10 +273,10 @@ async function attachToClaudeWorkerLocal(
 
 		// Create git worktree locally
 		console.log(
-			`Creating git worktree locally: git worktree add ${worktreePath} -b ${branchName} main`,
+			`Creating git worktree locally: git worktree add ${worktreePath} -b ${branchName} test-branch`,
 		);
 		const worktreeCmd = Bun.spawn(
-			["git", "worktree", "add", worktreePath, "-b", branchName, "main"],
+			["git", "worktree", "add", worktreePath, "-b", branchName, "test-branch"],
 			{
 				stdio: ["pipe", "pipe", "pipe"],
 			},
@@ -326,14 +326,32 @@ async function attachToClaudeWorkerLocal(
 		// Wait a moment for process to terminate
 		await new Promise((resolve) => setTimeout(resolve, 200));
 
-		// Change directory to worktree and start claude
+		// Change directory to worktree
 		await Bun.spawn(
 			[
 				"tmux",
 				"send-keys",
 				"-t",
 				sessionName,
-				`cd ${worktreePath} && claude "${prompt}"`,
+				`cd ${worktreePath}`,
+				"Enter",
+			],
+			{
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		).exited;
+
+		// Wait a moment for cd to complete
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Start claude with the prompt
+		await Bun.spawn(
+			[
+				"tmux",
+				"send-keys",
+				"-t",
+				sessionName,
+				`claude "${prompt.replace(/"/g, '\\"')}"`,
 				"Enter",
 			],
 			{
@@ -379,13 +397,13 @@ async function attachToClaudeWorkerModal(
 
 		// Create git worktree on remote instance (directly go to /root/sync)
 		console.log(
-			`Creating git worktree: cd /root/sync && git worktree add ${worktreePath} -b ${branchName} main`,
+			`Creating git worktree: cd /root/sync && git worktree add ${worktreePath} -b ${branchName} test-branch`,
 		);
 		const worktreeCmd = Bun.spawn(
 			[
 				"bash",
 				"-c",
-				`${sshCommand} "cd /root/sync && git worktree add ${worktreePath} -b ${branchName} main"`,
+				`${sshCommand} "cd /root/sync && git worktree add ${worktreePath} -b ${branchName} test-branch"`,
 			],
 			{
 				stdio: ["pipe", "pipe", "pipe"],
@@ -447,18 +465,63 @@ async function attachToClaudeWorkerModal(
 		// Wait a moment for process to terminate
 		await new Promise((resolve) => setTimeout(resolve, 500));
 
-		// Change directory to worktree and start claude
+		// Change directory to worktree
+		const cdCmd = await Bun.spawn(
+			[
+				"bash",
+				"-c",
+				`${sshCommand} "tmux send-keys -t ${sessionName} 'cd ${worktreePath}' Enter"`,
+			],
+			{
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
+		await cdCmd.exited;
+
+		// Wait a moment for cd to complete
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Create a temporary file with the prompt to avoid escaping issues
+		const tempPromptFile = `/tmp/claude-prompt-${Date.now()}.txt`;
+		const createFileCmd = await Bun.spawn(
+			[
+				"bash",
+				"-c",
+				`${sshCommand} "cat > ${tempPromptFile} << 'EOF'
+${prompt}
+EOF"`,
+			],
+			{
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
+		await createFileCmd.exited;
+
+		// Start claude with the prompt file
 		const claudeCmd = await Bun.spawn(
 			[
 				"bash",
 				"-c",
-				`${sshCommand} "tmux send-keys -t ${sessionName} 'cd ${worktreePath} && claude --dangerously-skip-permissions \\"${prompt}\\"' Enter"`,
+				`${sshCommand} "tmux send-keys -t ${sessionName} 'claude --dangerously-skip-permissions \\\"\\$(cat ${tempPromptFile})\\\"' Enter"`,
 			],
 			{
 				stdio: ["pipe", "pipe", "pipe"],
 			},
 		);
 		await claudeCmd.exited;
+
+		// Clean up the temporary file
+		const cleanupCmd = await Bun.spawn(
+			[
+				"bash",
+				"-c",
+				`${sshCommand} "rm -f ${tempPromptFile}"`,
+			],
+			{
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
+		await cleanupCmd.exited;
 
 		console.log(
 			`Created worktree ${worktreePath} and restarted claude in remote session: ${sessionName}`,
@@ -469,9 +532,85 @@ async function attachToClaudeWorkerModal(
 	}
 }
 
+/**
+ * Marks a Linear issue as complete
+ * @param issueId - The ID of the issue to mark as complete
+ * @returns Whether the status was successfully updated
+ */
+async function markIssueAsComplete(issueId: string): Promise<boolean> {
+	try {
+		const issue = await linearClient.issue(issueId);
+		const team = await issue.team;
+		
+		if (!team) {
+			console.error(`No team found for issue ${issueId}`);
+			return false;
+		}
+
+		const states = await team.states();
+		const completedState = states.nodes.find(
+			state => state.name.toLowerCase().includes('done') || 
+					 state.name.toLowerCase().includes('complete')
+		);
+
+		if (!completedState) {
+			console.error(`No completed state found for team ${team.name}`);
+			return false;
+		}
+
+		await issue.update({
+			stateId: completedState.id
+		});
+
+		console.log(`Issue ${issueId} marked as complete`);
+		return true;
+	} catch (error) {
+		console.error(`Error marking issue ${issueId} as complete:`, error);
+		return false;
+	}
+}
+
+/**
+ * Marks a Linear issue as in progress
+ * @param issueId - The ID of the issue to mark as in progress
+ * @returns Whether the status was successfully updated
+ */
+async function markIssueAsInProgress(issueId: string): Promise<boolean> {
+	try {
+		const issue = await linearClient.issue(issueId);
+		const team = await issue.team;
+		
+		if (!team) {
+			console.error(`No team found for issue ${issueId}`);
+			return false;
+		}
+
+		const states = await team.states();
+		const inProgressState = states.nodes.find(
+			state => state.name.toLowerCase().includes('progress') || 
+					 state.name.toLowerCase().includes('doing') ||
+					 state.name.toLowerCase().includes('active')
+		);
+
+		if (!inProgressState) {
+			console.error(`No in progress state found for team ${team.name}`);
+			return false;
+		}
+
+		await issue.update({
+			stateId: inProgressState.id
+		});
+
+		console.log(`Issue ${issueId} marked as in progress`);
+		return true;
+	} catch (error) {
+		console.error(`Error marking issue ${issueId} as in progress:`, error);
+		return false;
+	}
+}
+
 // Keep the original function name pointing to modal version for backward compatibility
 const attachToClaudeWorker = attachToClaudeWorkerModal;
-await attachToClaudeWorker(2, "make a file called readme.md", "HAR-6");
 
 export {
 	linearClient,
@@ -484,6 +623,8 @@ export {
 	attachToClaudeWorker,
 	attachToClaudeWorkerLocal,
 	attachToClaudeWorkerModal,
+	markIssueAsComplete,
+	markIssueAsInProgress,
 };
 
 export type { DependencyStatus };
