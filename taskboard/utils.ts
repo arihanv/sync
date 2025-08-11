@@ -263,55 +263,11 @@ async function attachToClaudeWorkerLocal(
 	linearIssueId: string,
 ): Promise<void> {
 	const sessionName = `claude-worker-${workerNum}`;
-	const branchName = linearIssueId;
-	const worktreePath = `../project-${linearIssueId}`;
 
 	await addCommentToIssue(linearIssueId, `Waking up worker ${workerNum}`);
 
 	try {
 		await addCommentToIssue(linearIssueId, "Spinning up local worker");
-
-		// Create git worktree locally
-		console.log(
-			`Creating git worktree locally: git worktree add ${worktreePath} -b ${branchName} main`,
-		);
-		const worktreeCmd = Bun.spawn(
-			["git", "worktree", "add", worktreePath, "-b", branchName, "main"],
-			{
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		);
-
-		const worktreeExitCode = await worktreeCmd.exited;
-		if (worktreeExitCode !== 0) {
-			console.error(
-				`Git worktree command failed with exit code: ${worktreeExitCode}`,
-			);
-			// Read stderr to see what went wrong
-			const stderr = await new Response(worktreeCmd.stderr).text();
-			console.error(`Git worktree stderr: ${stderr}`);
-		} else {
-			console.log(`Git worktree created successfully at ${worktreePath}`);
-		}
-
-		await addCommentToIssue(
-			linearIssueId,
-			`Working on worktree ${worktreePath}`,
-		);
-
-		// Verify the worktree directory exists
-		const verifyCmd = Bun.spawn(["ls", "-la", worktreePath], {
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-
-		const verifyExitCode = await verifyCmd.exited;
-		if (verifyExitCode !== 0) {
-			console.error(`Worktree directory ${worktreePath} does not exist!`);
-			const stderr = await new Response(verifyCmd.stderr).text();
-			console.error(`Verify stderr: ${stderr}`);
-			throw new Error(`Failed to create worktree at ${worktreePath}`);
-		}
-		console.log(`Verified worktree directory exists at ${worktreePath}`);
 
 		// Kill any existing claude process in the session (send Ctrl+C twice for containers)
 		await Bun.spawn(["tmux", "send-keys", "-t", sessionName, "C-c"], {
@@ -326,7 +282,7 @@ async function attachToClaudeWorkerLocal(
 		// Wait a moment for process to terminate
 		await new Promise((resolve) => setTimeout(resolve, 200));
 
-		// Send new claude command with prompt using proper shell quoting
+		// Send claude command with prompt (Claude will handle worktree creation itself)
 		// Use single quotes to avoid shell interpretation of special characters
 		const quotedPrompt = `'${prompt.replace(/'/g, "'\"'\"'")}'`;
 		await Bun.spawn([
@@ -341,7 +297,7 @@ async function attachToClaudeWorkerLocal(
 		}).exited;
 
 		console.log(
-			`Created worktree ${worktreePath} and restarted claude in session: ${sessionName}`,
+			`Started claude in session: ${sessionName} - Claude will create its own worktree`,
 		);
 	} catch (error) {
 		console.error(`Error attaching to claude worker ${workerNum}:`, error);

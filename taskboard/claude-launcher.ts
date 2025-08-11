@@ -62,28 +62,52 @@ async function generatePromptFromIssue(issueId: string): Promise<string> {
         const issue = await linearClient.issue(issueId);
         const issueData = await issue;
         
+        const branchName = issueData.branchName || `feature/${issueData.identifier.toLowerCase()}`;
+        const worktreeDir = `trees/${issueData.identifier}`;
+        
         // Build context-rich prompt
         const prompt = `
-You are executing a Linear issue autonomously. You have full permission to read, write, and edit files, and run git/bun commands.
+You are executing a Linear issue autonomously in a dedicated git worktree for parallel development.
 
 Issue: ${issueData.identifier} - ${issueData.title}
 Description: ${issueData.description || 'No description provided'}
 
 REQUIRED ACTIONS (execute these steps):
-1. Create and checkout a feature branch: git checkout -b ${issueData.branchName || `feature/${issueData.identifier.toLowerCase()}`}
-2. Analyze the issue requirements and existing codebase
-3. Implement the solution using the appropriate tools (Edit, Write, etc.)
-4. Test your implementation if applicable (using bun test or manual testing)
-5. Update changelog.md with a brief entry about your changes
-6. Commit your changes: git add -A && git commit -m "${issueData.identifier}: ${issueData.title}"
-7. Push the branch: git push -u origin ${issueData.branchName || `feature/${issueData.identifier.toLowerCase()}`}
+
+1. **Setup worktree for parallel development:**
+   - Create trees directory if it doesn't exist: mkdir -p trees
+   - Create git worktree: git worktree add -b ${branchName} ./${worktreeDir}
+   - Change to worktree directory: cd ${worktreeDir}
+   - Verify setup: pwd && git status && git branch
+
+2. **Implement the solution:**
+   - Analyze the issue requirements and existing codebase
+   - Implement the solution using the appropriate tools (Edit, Write, etc.)
+   - Test your implementation if applicable (using bun test or manual testing)
+
+3. **Finalize changes:**
+   - Update changelog.md with a brief entry about your changes
+   - Commit your changes: git add -A && git commit -m "${issueData.identifier}: ${issueData.title}"
+   - Push the branch: git push -u origin ${branchName}
+
+4. **Create Pull Request:**
+   - gh pr create --title "${issueData.identifier}: ${issueData.title}" --body "Resolves ${issueData.identifier}
+
+${issueData.description || 'No description provided'}
+
+## Changes
+- [Brief summary of changes made]
+
+## Testing
+- [Testing approach used]" --base main --head ${branchName}
 
 IMPORTANT:
 - You MUST actually execute these steps, not just describe them
 - Use the Edit and Write tools to modify files
 - Use Bash tool for git operations
 - Keep changes minimal and focused
-- Work in /Users/akshgarg/Documents/sync directory
+- Work within the ${worktreeDir} directory after creating it
+- This enables proper parallel development with isolated worktrees
 
 When complete, output "TASK_COMPLETE: ${issueData.identifier}" so we know you finished.
 `;
